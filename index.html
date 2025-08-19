@@ -1,0 +1,216 @@
+<section id="booking">
+  <h2>Book Appointment</h2>
+
+  <div class="stepper" aria-label="Booking steps">
+    <div class="step active"><span>1</span> Enter Name</div>
+    <div class="step"><span>2</span> Select Date</div>
+    <div class="step"><span>3</span> Select Time</div>
+    <div class="step"><span>4</span> Confirm</div>
+  </div>
+
+  <form id="bookingForm" class="booking-form" autocomplete="off">
+    <!-- Name Row -->
+    <div class="form-row">
+      <label for="patientName">Your Name</label>
+      <input type="text" id="patientName" name="patientName" placeholder="Enter your name" required>
+      <small id="nameHint" class="muted">Please enter your name to proceed.</small>
+    </div>
+
+    <div class="form-row">
+      <label for="date">Choose Date</label>
+      <input type="date" id="date" name="date" required disabled>
+      <small id="dateHint">Sundays: 9:00 AM – 10:00 PM • Mon–Sat: 5:00 PM – 10:00 PM</small>
+    </div>
+
+    <div class="form-row">
+      <label>Available Time Slots</label>
+      <div id="slots" class="slots" role="radiogroup" aria-label="Time slots"></div>
+      <input type="hidden" id="time" name="time" required>
+      <small id="timeHint" class="muted">Select a date to see available slots.</small>
+    </div>
+
+    <div id="previewCard" class="preview-card" hidden>
+      <div class="preview-icon">🗓️</div>
+      <div class="preview-info">
+        <div id="previewWhen" class="preview-when">—</div>
+        <div class="preview-note">You can review before sending on WhatsApp.</div>
+      </div>
+    </div>
+
+    <button type="submit" class="primary-btn">Continue</button>
+  </form>
+
+  <div class="tip">
+    💡 Tip of the day: Consistency beats intensity. 10–15 minutes of daily mobility can reduce pain and improve posture.
+  </div>
+</section>
+
+<script>
+  const phoneNumber = "919022736809";
+
+  // Elements
+  const nameInput = document.getElementById("patientName");
+  const dateInput = document.getElementById("date");
+  const slotsWrap = document.getElementById("slots");
+  const hiddenTime = document.getElementById("time");
+  const previewCard = document.getElementById("previewCard");
+  const previewWhen = document.getElementById("previewWhen");
+  const timeHint = document.getElementById("timeHint");
+  const steps = document.querySelectorAll(".stepper .step");
+
+  // Disable date & slots until name is entered
+  nameInput.addEventListener("input", ()=>{
+    if(nameInput.value.trim().length>0){
+      dateInput.disabled=false;
+      setStep(1);
+    } else {
+      dateInput.disabled=true;
+      slotsWrap.innerHTML="";
+      hiddenTime.value="";
+      previewCard.hidden=true;
+      setStep(0);
+    }
+  });
+
+  function setStep(idx){
+    steps.forEach((s,i)=>s.classList.toggle("active", i<=idx));
+  }
+
+  // Booking Slots Logic
+  const todayISO = new Date().toISOString().split("T")[0];
+  dateInput.setAttribute("min", todayISO);
+
+  function formatPretty(dateISO,timeHHMM){
+    const d=new Date(dateISO+"T00:00:00");
+    const dayName=d.toLocaleDateString("en-US",{weekday:"long"});
+    const friendly=d.toLocaleDateString("en-US",{day:"numeric",month:"short",year:"numeric"});
+    return {dayName,friendly,pretty:`${dayName}, ${friendly} at ${timeHHMM}`};
+  }
+
+  function format12Hour(hour24,minute){
+    const ampm=hour24>=12?"PM":"AM";
+    const hour12=hour24%12===0?12:hour24%12;
+    const mm=String(minute).padStart(2,"0");
+    return `${hour12}:${mm} ${ampm}`;
+  }
+
+  function slotButton(label){
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.className="slot";
+    btn.textContent=label;
+    btn.setAttribute("role","radio");
+    btn.setAttribute("aria-checked","false");
+    btn.addEventListener("click",()=>{
+      document.querySelectorAll(".slot.selected").forEach(s=>{
+        s.classList.remove("selected");
+        s.setAttribute("aria-checked","false");
+      });
+      btn.classList.add("selected");
+      btn.setAttribute("aria-checked","true");
+      hiddenTime.value=label;
+
+      const {pretty}=formatPretty(dateInput.value,label);
+      previewWhen.textContent=pretty;
+      previewCard.hidden=false;
+
+      setStep(3);
+    });
+    return btn;
+  }
+
+  function generateSlotsFor(dateISO){
+    slotsWrap.innerHTML="";
+    hiddenTime.value="";
+    previewCard.hidden=true;
+
+    const d=new Date(dateISO+"T00:00:00");
+    if(isNaN(d)) return;
+
+    const day=d.getDay(); //0=Sun
+    const range=(day===0)?[9,22]:[17,22];
+    const now=new Date();
+    const isToday=d.toDateString()===now.toDateString();
+    let any=false;
+
+    for(let hour=range[0];hour<=range[1];hour++){
+      for(let minute of [0,30]){
+        if(hour===range[1]&&minute===30) continue;
+        const label=format12Hour(hour,minute);
+        if(isToday){
+          const slotTime=new Date(d);
+          slotTime.setHours(hour,minute,0,0);
+          if(slotTime<=now) continue;
+        }
+        slotsWrap.appendChild(slotButton(label));
+        any=true;
+      }
+    }
+
+    timeHint.textContent=any?"Tap a time to select.":"No slots left for this day.";
+    setStep(any?2:1);
+  }
+
+  dateInput.addEventListener("change",()=>{
+    if(!dateInput.value) return;
+    generateSlotsFor(dateInput.value);
+    setStep(2);
+  });
+
+  window.addEventListener("DOMContentLoaded",()=>{
+    dateInput.value=todayISO;
+    generateSlotsFor(todayISO);
+  });
+
+  // Modal & WhatsApp
+  const modal=document.getElementById("previewModal");
+  const previewText=document.getElementById("previewText");
+  const confirmBtn=document.getElementById("confirmBtn");
+  const cancelBtn=document.getElementById("cancelBtn");
+
+  document.getElementById("bookingForm").addEventListener("submit",(e)=>{
+    e.preventDefault();
+    const name = nameInput.value.trim();
+    const date=dateInput.value;
+    const time=hiddenTime.value;
+    if(!name){nameInput.focus(); return;}
+    if(!date){dateInput.focus(); return;}
+    if(!time){timeHint.textContent="Please select a time slot."; return;}
+    const {pretty}=formatPretty(date,time);
+    previewText.innerHTML=`${name}, you selected <b>${pretty}</b>.<br>Do you want to continue to WhatsApp?`;
+    modal.style.display="flex";
+    modal.setAttribute("aria-hidden","false");
+  });
+
+  confirmBtn.addEventListener("click",()=>{
+    const name = nameInput.value.trim();
+    const date=dateInput.value;
+    const time=hiddenTime.value;
+    const {dayName,friendly}=formatPretty(date,time);
+    const message=`Hello, my name is ${name}. I would like to book an appointment on ${dayName}, ${friendly} at ${time}.`;
+    const url=`https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+    modal.style.display="none";
+    modal.setAttribute("aria-hidden","true");
+    window.open(url,"_blank");
+  });
+
+  cancelBtn.addEventListener("click",()=>{
+    modal.style.display="none";
+    modal.setAttribute("aria-hidden","true");
+  });
+
+  modal.addEventListener("click",(e)=>{
+    if(e.target===modal){
+      modal.style.display="none";
+      modal.setAttribute("aria-hidden","true");
+    }
+  });
+
+  window.addEventListener("keydown",(e)=>{
+    if(e.key==="Escape"&&modal.style.display==="flex"){
+      modal.style.display="none";
+      modal.setAttribute("aria-hidden","true");
+    }
+  });
+
+</script>
